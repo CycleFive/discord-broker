@@ -1,0 +1,43 @@
+// Copy to wrangler.jsonc (git-ignored) and fill in your own values:
+//   cp wrangler.example.jsonc wrangler.jsonc
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "discord-broker",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-01",
+  // Required by the OAuth library for Client ID Metadata Documents (Claude's preferred
+  // way to identify itself): the Worker fetches client-supplied https URLs.
+  "compatibility_flags": [
+    "global_fetch_strictly_public"
+  ],
+  "kv_namespaces": [
+    // Create with: npx wrangler kv namespace create OAUTH_KV, then paste the id here.
+    {
+      "binding": "OAUTH_KV",
+      "id": "<your-kv-namespace-id>"
+    }
+  ],
+  "vars": {
+    // Public origin of this Worker, no trailing slash. The MCP URL is PUBLIC_URL + "/mcp".
+    "PUBLIC_URL": "https://discord-broker.<subdomain>.workers.dev",
+    // The Discord application's numeric Application ID (= OAuth2 Client ID). Not secret.
+    "DISCORD_CLIENT_ID": "<your-application-id>",
+    // Who may sign in: YOUR numeric Discord user ID (Developer Mode -> right-click yourself -> Copy User ID).
+    "ALLOWED_DISCORD_USERS": "<your-discord-user-id>",
+    // Optional: server IDs the bot may act in. Empty = every server it's in, plus DMs.
+    "DISCORD_ALLOWED_GUILDS": "",
+    // Optional: channel or category IDs. Threads inherit from their channel, channels from their category.
+    "DISCORD_ALLOWED_CHANNELS": "",
+    // Optional: "true" sends PKCE on the Discord sign-in (Discord recommends it but documents no parameters).
+    "DISCORD_OAUTH_PKCE": "",
+    // Optional: "true" makes Claude register via DCR instead of a Client ID Metadata Document.
+    "DISABLE_CIMD": "",
+    // Optional: Origins accepted when a request carries an Origin header.
+    "ALLOWED_ORIGINS": ""
+  },
+  // Secrets, set with `wrangler secret put` (never in this file):
+  //   DISCORD_BOT_TOKEN, DISCORD_CLIENT_SECRET
+  "observability": {
+    "enabled": true
+  }
+}

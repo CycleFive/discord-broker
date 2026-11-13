@@ -1,0 +1,4 @@
+# Copy to .dev.vars for `wrangler dev` (git-ignored). Use a throwaway test application if you can.
+DISCORD_BOT_TOKEN="..."
+DISCORD_CLIENT_SECRET="..."
+PUBLIC_URL="http://localhost:8787"
