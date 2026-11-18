@@ -214,6 +214,38 @@ Then ask for `bot_info`: it should show the bot's name and `message_content: ena
 `npx wrangler tail` shows every sign-in step as a JSON line (`config_error`,
 `token_exchange_failed`, `sign_in_refused`, `sign_in`, `oauth_endpoint`, `tool_call`).
 
+## Internal feed (for mailroom)
+
+`Feed` is a second, named `WorkerEntrypoint` export of this Worker. Other Workers in the
+same Cloudflare account reach it through a service binding; it has no public URL, because
+only the default export is routable from the internet. It is read-only, and it lets a
+sibling project (mailroom) poll Discord and sign users in without ever holding the bot
+token or the OAuth client secret. Callers send ordinary `Request`s such as
+`https://feed/identity`; the host name is meaningless, only the path matters.
+
+| Route | Answer |
+| --- | --- |
+| `GET /identity` | `200 {"id", "login", "name"}` of the bot |
+| `GET /api/<path>?<query>` | Discord's status and JSON body, unchanged. A path outside the allowlists is `403 {"error"}`, a malformed path `400`. |
+| any other method on `/api/...` | `405 {"error": "feed is read-only"}` |
+| `GET /signin/client` | `200 {"client_id"}` |
+| `POST /signin` with `{"code", "redirect_uri"}` | `200 {"id", "username"}`; missing fields `400`; a failed exchange `502 {"error"}` with the same hint the sign-in page shows |
+| anything else | `404 {"error": "not found"}` |
+
+`DISCORD_ALLOWED_GUILDS` and `DISCORD_ALLOWED_CHANNELS` apply to `/api/...` exactly as they
+do to `discord_request`. `POST /signin` does not check `ALLOWED_DISCORD_USERS`; the caller
+decides who may sign in. Each call logs one `feed` line (path, status, ms; never bodies).
+
+A consumer binds it in its own `wrangler.jsonc`:
+
+```jsonc
+"services": [
+  { "binding": "DISCORD_FEED", "service": "discord-broker", "entrypoint": "Feed" }
+]
+```
+
+then calls `env.DISCORD_FEED.fetch("https://feed/identity")`.
+
 ## Which bot
 
 Claude can use a new application of its own or one of the existing ones. A separate
@@ -247,6 +279,7 @@ faked at the fetch layer; no test touches a real token.
 
 Layout: `src/index.ts` (routing, OAuth roles), `src/auth.ts` (consent, Discord sign-in,
 allowlist, config checks), `src/mcp.ts` (transport, identical to github-broker's),
+`src/feed.ts` (the internal `Feed` entrypoint), `src/shared.ts` (isolate-wide limiter and cache),
 `src/tools.ts`, `src/discord/client.ts` (REST client, rate limits),
 `src/discord/scope.ts` (guild/channel allowlists).
 

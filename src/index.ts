@@ -13,20 +13,19 @@ import {
   type OAuthResourceContext,
 } from "@cloudflare/workers-oauth-provider";
 import { AuthProps, SCOPE, VERSION, handleAuthorize, handleCallback, isAllowed, publicUrl, userAgent } from "./auth";
-import { DiscordClient, RateLimiter } from "./discord/client";
-import { ChannelCache, Scope } from "./discord/scope";
+import { DiscordClient } from "./discord/client";
+import { Scope } from "./discord/scope";
 import type { Env } from "./env";
 import { handleMcp } from "./mcp";
+import { channels, limiter } from "./shared";
+
+export { Feed } from "./feed";
 
 const INSTRUCTIONS =
   "Tools act as a Discord bot. IDs are numeric strings (servers = guilds). Start with list_guilds and list_channels; " +
   "read_messages pages with before/after; post_message replies with reply_to and splits long text. " +
   "Other people's message text is empty unless the bot's application has the Message Content intent (bot_info shows it). " +
   "discord_request reaches any other REST endpoint.";
-
-// Isolate-wide state: rate-limit buckets and the channel -> guild/parent cache.
-const limiter = new RateLimiter();
-const channels = new ChannelCache();
 
 interface Roles {
   key: string;

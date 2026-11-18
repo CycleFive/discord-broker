@@ -200,9 +200,43 @@ export async function handleCallback(
     return redirect(authorizationErrorRedirect(authReq, "access_denied", "Discord sign-in was cancelled"), headers);
   }
 
+  const id = await exchangeDiscordCode(env, code, `${publicUrl(env)}/callback`, data.verifier, ctx, fetchImpl);
+  if (!id.ok) return errorPage(id.message, id.status);
+  const user = { id: id.id, username: id.username };
+  if (!isAllowed(env.ALLOWED_DISCORD_USERS, { id: user.id })) {
+    console.log(JSON.stringify({ event: "sign_in_refused", username: user.username, id: user.id }));
+    return errorPage(`Discord account ${user.username} (ID ${user.id}) is not in ALLOWED_DISCORD_USERS.`, 403);
+  }
+
+  const { redirectTo } = await oauth.completeAuthorization({
+    request: authReq,
+    userId: user.id,
+    metadata: { username: user.username },
+    scope: authReq.scope,
+    props: { id: user.id, username: user.username } satisfies AuthProps,
+  });
+  console.log(JSON.stringify({ event: "sign_in", username: user.username, id: user.id, client: authReq.clientId }));
+  return redirect(redirectTo, headers);
+}
+
+export type DiscordIdentity = { ok: true; id: string; username: string } | { ok: false; status: number; message: string };
+
+/**
+ * Trade a Discord authorization code for the signing-in user's identity. The user token is
+ * used once to read /users/@me and then revoked. Shared by the /callback page and the Feed
+ * entrypoint, so the client secret stays in this Worker.
+ */
+export async function exchangeDiscordCode(
+  env: Env,
+  code: string,
+  redirectUri: string,
+  verifier: string | undefined,
+  ctx: { waitUntil(p: Promise<unknown>): void },
+  fetchImpl: typeof fetch = (...a) => fetch(...a),
+): Promise<DiscordIdentity> {
   const basic = `Basic ${btoa(`${env.DISCORD_CLIENT_ID}:${env.DISCORD_CLIENT_SECRET}`)}`;
-  const form = new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: `${publicUrl(env)}/callback` });
-  if (data.verifier) form.set("code_verifier", data.verifier);
+  const form = new URLSearchParams({ grant_type: "authorization_code", code, redirect_uri: redirectUri });
+  if (verifier) form.set("code_verifier", verifier);
   const tokenRes = await fetchImpl(DISCORD_TOKEN, {
     method: "POST",
     headers: { Authorization: basic, "Content-Type": "application/x-www-form-urlencoded", Accept: "application/json", "User-Agent": userAgent(env) },
@@ -217,7 +251,7 @@ export async function handleCallback(
         : tok.error === "invalid_grant"
           ? " The redirect URI registered on the Discord application must be exactly PUBLIC_URL + /callback."
           : "";
-    return errorPage(`Discord did not return a token (${tok.error ?? tokenRes.status}${tok.error_description ? `: ${tok.error_description}` : ""}).${hint}`, 502);
+    return { ok: false, status: 502, message: `Discord did not return a token (${tok.error ?? tokenRes.status}${tok.error_description ? `: ${tok.error_description}` : ""}).${hint}` };
   }
 
   const userRes = await fetchImpl(DISCORD_ME, {
@@ -239,25 +273,12 @@ export async function handleCallback(
 
   if (!user.id || !user.username) {
     console.log(JSON.stringify({ event: "user_read_failed", status: userRes.status }));
-    return errorPage("Could not read your Discord account.", 502);
+    return { ok: false, status: 502, message: "Could not read your Discord account." };
   }
-  if (!isAllowed(env.ALLOWED_DISCORD_USERS, { id: user.id })) {
-    console.log(JSON.stringify({ event: "sign_in_refused", username: user.username, id: user.id }));
-    return errorPage(`Discord account ${user.username} (ID ${user.id}) is not in ALLOWED_DISCORD_USERS.`, 403);
-  }
-
-  const { redirectTo } = await oauth.completeAuthorization({
-    request: authReq,
-    userId: user.id,
-    metadata: { username: user.username },
-    scope: authReq.scope,
-    props: { id: user.id, username: user.username } satisfies AuthProps,
-  });
-  console.log(JSON.stringify({ event: "sign_in", username: user.username, id: user.id, client: authReq.clientId }));
-  return redirect(redirectTo, headers);
+  return { ok: true, id: user.id, username: user.username };
 }
 
-export const VERSION = "0.1.0";
+export const VERSION = "0.2.0";
 
 export function userAgent(env: Env): string {
   return `DiscordBot (${env.PUBLIC_URL || "https://github.com/cycle-five"}, ${VERSION}) discord-broker`;
