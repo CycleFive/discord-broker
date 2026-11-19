@@ -1,5 +1,7 @@
 # discord-broker
 
+> **Moved.** This broker now lives in [CycleFive/brokers](https://github.com/CycleFive/brokers/tree/master/brokers/discord), with its history. This repository is archived at v0.2.0 and gets no further changes.
+
 A remote MCP server on Cloudflare Workers that lends an MCP client (Claude) a Discord bot.
 The bot token lives only in the Worker's secret store. The client never sees it, only tool
 results.
